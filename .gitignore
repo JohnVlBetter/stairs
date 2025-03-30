@@ -30,3 +30,8 @@
 *.exe
 *.out
 *.app
+
+src/.vs/
+src/*.user
+src/x64
+src/stairs/
