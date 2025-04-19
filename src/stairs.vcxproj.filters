@@ -16,6 +16,9 @@
     <Filter Include="glfw">
       <UniqueIdentifier>{117ff184-94e0-4ae4-9243-2fb8fd5d25c5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="shaders">
+      <UniqueIdentifier>{cf9d2fcf-5eae-4ac0-9d6e-7fbcb2170d4a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stairs.cpp">
@@ -110,5 +113,15 @@
     <ClInclude Include="..\extern\glfw\src\null_joystick.h">
       <Filter>glfw</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\triangle.vert.glsl">
+      <Filter>shaders</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\triangle.frag.glsl">
+      <Filter>shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>
