@@ -19,6 +19,9 @@
     <Filter Include="shaders">
       <UniqueIdentifier>{cf9d2fcf-5eae-4ac0-9d6e-7fbcb2170d4a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="volk">
+      <UniqueIdentifier>{47488934-2b53-4132-a8e6-810c93443830}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stairs.cpp">
@@ -87,6 +90,9 @@
     <ClCompile Include="..\extern\glfw\src\null_window.c">
       <Filter>glfw</Filter>
     </ClCompile>
+    <ClCompile Include="..\extern\volk\volk.c">
+      <Filter>volk</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\extern\glfw\src\win32_joystick.h">
@@ -112,6 +118,9 @@
     </ClInclude>
     <ClInclude Include="..\extern\glfw\src\null_joystick.h">
       <Filter>glfw</Filter>
+    </ClInclude>
+    <ClInclude Include="..\extern\volk\volk.h">
+      <Filter>volk</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

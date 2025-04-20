@@ -3,7 +3,7 @@
 
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
-#include <vulkan/vulkan.h>
+#include <volk.h>
 
 #include <vector>
 #include <algorithm>
@@ -86,8 +86,6 @@ VkDebugReportCallbackEXT registerDebugCallback(VkInstance instance)
 	VkDebugReportCallbackCreateInfoEXT createInfo = { VK_STRUCTURE_TYPE_DEBUG_REPORT_CREATE_INFO_EXT };
 	createInfo.flags = VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT | VK_DEBUG_REPORT_ERROR_BIT_EXT;
 	createInfo.pfnCallback = debugReportCallback;
-
-	PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT");
 
 	VkDebugReportCallbackEXT callback = 0;
 	VK_CHECK(vkCreateDebugReportCallbackEXT(instance, &createInfo, 0, &callback));
@@ -478,10 +476,13 @@ struct Swapchain
 	uint32_t imageCount;
 };
 
-void createSwapchain(Swapchain& result, VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t familyIndex, VkFormat format, uint32_t width, uint32_t height, VkRenderPass renderPass, VkSwapchainKHR oldSwapchain = 0)
+void createSwapchain(Swapchain& result, VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, uint32_t familyIndex, VkFormat format, VkRenderPass renderPass, VkSwapchainKHR oldSwapchain = 0)
 {
 	VkSurfaceCapabilitiesKHR surfaceCaps;
 	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &surfaceCaps));
+
+	uint32_t width = surfaceCaps.currentExtent.width;
+	uint32_t height = surfaceCaps.currentExtent.height;
 
 	VkSwapchainKHR swapchain = createSwapchain(device, surface, surfaceCaps, familyIndex, format, width, height, oldSwapchain);
 	assert(swapchain);
@@ -541,7 +542,7 @@ void resizeSwapchainIfNecessary(Swapchain& result, VkPhysicalDevice physicalDevi
 
 	Swapchain old = result;
 
-	createSwapchain(result, physicalDevice, device, surface, familyIndex, format, newWidth, newHeight, renderPass, old.swapchain);
+	createSwapchain(result, physicalDevice, device, surface, familyIndex, format, renderPass, old.swapchain);
 
 	VK_CHECK(vkDeviceWaitIdle(device));
 
@@ -553,8 +554,14 @@ int main()
 	int rc = glfwInit();
 	assert(rc);
 
+	VK_CHECK(volkInitialize());
+
+	glfwInitHint(GLFW_CLIENT_API, GLFW_NO_API);
+
 	VkInstance instance = createInstance();
 	assert(instance);
+
+	volkLoadInstance(instance);
 
 #ifdef _DEBUG
 	VkDebugReportCallbackEXT debugCallback = registerDebugCallback(instance);
@@ -573,6 +580,8 @@ int main()
 	VkDevice device = createDevice(instance, physicalDevice, familyIndex);
 	assert(device);
 
+	volkLoadDevice(device);
+
 	GLFWwindow* window = glfwCreateWindow(1024, 768, "niagara", 0, 0);
 	assert(window);
 
@@ -582,9 +591,6 @@ int main()
 	VkBool32 presentSupported = 0;
 	VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, surface, &presentSupported));
 	assert(presentSupported);
-
-	int windowWidth = 0, windowHeight = 0;
-	glfwGetWindowSize(window, &windowWidth, &windowHeight);
 
 	VkFormat swapchainFormat = getSwapchainFormat(physicalDevice, surface);
 
@@ -616,7 +622,7 @@ int main()
 	assert(trianglePipeline);
 
 	Swapchain swapchain;
-	createSwapchain(swapchain, physicalDevice, device, surface, familyIndex, swapchainFormat, windowWidth, windowHeight, renderPass);
+	createSwapchain(swapchain, physicalDevice, device, surface, familyIndex, swapchainFormat, renderPass);
 
 	VkCommandPool commandPool = createCommandPool(device, familyIndex);
 	assert(commandPool);
@@ -729,7 +735,6 @@ int main()
 	vkDestroyDevice(device, 0);
 
 #ifdef _DEBUG
-	PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugReportCallbackEXT");
 	vkDestroyDebugReportCallbackEXT(instance, debugCallback, 0);
 #endif
 
