@@ -5,6 +5,10 @@
 #include <GLFW/glfw3native.h>
 #include <volk.h>
 
+#define FAST_OBJ_IMPLEMENTATION
+#include <fast_obj.h>
+#include <meshoptimizer.h>
+
 #include <vector>
 #include <algorithm>
 
@@ -175,15 +179,28 @@ VkDevice createDevice(VkInstance instance, VkPhysicalDevice physicalDevice, uint
 
 	const char* extensions[] =
 	{
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+		VK_KHR_16BIT_STORAGE_EXTENSION_NAME,
+		VK_KHR_8BIT_STORAGE_EXTENSION_NAME,
 	};
 
+	VkPhysicalDeviceFeatures2 features = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+	features.features.vertexPipelineStoresAndAtomics = true;
+
+	VkPhysicalDeviceVulkan12Features features12 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+	features12.shaderInt8 = true; 
+	features12.uniformAndStorageBuffer8BitAccess = true;
+	
 	VkDeviceCreateInfo createInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
 	createInfo.queueCreateInfoCount = 1;
 	createInfo.pQueueCreateInfos = &queueInfo;
 
 	createInfo.ppEnabledExtensionNames = extensions;
 	createInfo.enabledExtensionCount = sizeof(extensions) / sizeof(extensions[0]);
+
+	createInfo.pNext = &features;
+	features.pNext = &features12;
 
 	VkDevice device = 0;
 	VK_CHECK(vkCreateDevice(physicalDevice, &createInfo, 0, &device));
@@ -374,10 +391,28 @@ VkShaderModule loadShader(VkDevice device, const char* path)
 
 VkPipelineLayout createPipelineLayout(VkDevice device)
 {
+	VkDescriptorSetLayoutBinding setBinding[1] = {};
+	setBinding[0].binding = 0;
+	setBinding[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	setBinding[0].descriptorCount = 1;
+	setBinding[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	VkDescriptorSetLayoutCreateInfo setCreateInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+	setCreateInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+	setCreateInfo.bindingCount = ARRAYSIZE(setBinding);
+	setCreateInfo.pBindings = setBinding;
+
+	VkDescriptorSetLayout setLayout = 0;
+	VK_CHECK(vkCreateDescriptorSetLayout(device, &setCreateInfo, 0, &setLayout));
+
 	VkPipelineLayoutCreateInfo createInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+	createInfo.setLayoutCount = 1;
+	createInfo.pSetLayouts = &setLayout;
 
 	VkPipelineLayout layout = 0;
 	VK_CHECK(vkCreatePipelineLayout(device, &createInfo, 0, &layout));
+
+	//vkDestroyDescriptorSetLayout(device, setLayout, 0);
 
 	return layout;
 }
@@ -549,8 +584,146 @@ void resizeSwapchainIfNecessary(Swapchain& result, VkPhysicalDevice physicalDevi
 	destroySwapchain(device, old);
 }
 
-int main()
+struct Vertex {
+	float vx, vy, vz;
+	uint8_t nx, ny, nz, nw;
+	float tu, tv;
+};
+
+struct Mesh {
+	std::vector<Vertex> vertices;
+	std::vector<uint32_t> indices;
+};
+
+bool loadMesh(Mesh& result, const char* path)
 {
+	fastObjMesh* obj = fast_obj_read(path);
+	if (!obj)
+	{
+		printf("Error loading %s: file not found\n", path);
+		return false;
+	}
+
+	size_t total_indices = 0;
+
+	for (unsigned int i = 0; i < obj->face_count; ++i)
+		total_indices += 3 * (obj->face_vertices[i] - 2);
+
+	std::vector<Vertex> vertices(total_indices);
+
+	size_t vertex_offset = 0;
+	size_t index_offset = 0;
+
+	for (unsigned int i = 0; i < obj->face_count; ++i)
+	{
+		for (unsigned int j = 0; j < obj->face_vertices[i]; ++j)
+		{
+			fastObjIndex gi = obj->indices[index_offset + j];
+
+			float nx = obj->normals[gi.n * 3 + 0];
+			float ny = obj->normals[gi.n * 3 + 1];
+			float nz = obj->normals[gi.n * 3 + 2];
+
+			Vertex v =
+			{
+				obj->positions[gi.p * 3 + 0],
+				obj->positions[gi.p * 3 + 1],
+				obj->positions[gi.p * 3 + 2],
+				uint8_t(nx * 127.0f + 127.0f),
+				uint8_t(ny * 127.0f + 127.0f),
+				uint8_t(nz * 127.0f + 127.0f),
+				uint8_t(0),
+				obj->texcoords[gi.t * 2 + 0],
+				obj->texcoords[gi.t * 2 + 1],
+			};
+
+			// triangulate polygon on the fly; offset-3 is always the first polygon vertex
+			if (j >= 3)
+			{
+				vertices[vertex_offset + 0] = vertices[vertex_offset - 3];
+				vertices[vertex_offset + 1] = vertices[vertex_offset - 1];
+				vertex_offset += 2;
+			}
+
+			vertices[vertex_offset] = v;
+			vertex_offset++;
+		}
+
+		index_offset += obj->face_vertices[i];
+	}
+
+	fast_obj_destroy(obj);
+
+	std::vector<unsigned int> remap(total_indices);
+
+	size_t total_vertices = meshopt_generateVertexRemap(&remap[0], NULL, total_indices, &vertices[0], total_indices, sizeof(Vertex));
+
+	result.indices.resize(total_indices);
+	meshopt_remapIndexBuffer(&result.indices[0], NULL, total_indices, &remap[0]);
+
+	result.vertices.resize(total_vertices);
+	meshopt_remapVertexBuffer(&result.vertices[0], &vertices[0], total_indices, sizeof(Vertex), &remap[0]);
+
+	return true;
+}
+
+struct Buffer {
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	void* data;
+	size_t size;
+};
+
+uint32_t selectMemoryType(const VkPhysicalDeviceMemoryProperties& memoryProperties, uint32_t memoryTypeBits, VkMemoryPropertyFlags flags) {
+	for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i) {
+		if ((memoryTypeBits & (1 << i)) != 0 && (memoryProperties.memoryTypes[i].propertyFlags & flags) == flags) {
+			return i;
+		}
+	}
+
+	assert(!"No compatible memory type found!");
+	return ~0u;
+}
+
+void createBuffer(Buffer& result, VkDevice device, const VkPhysicalDeviceMemoryProperties& memoryProperties, size_t size, VkBufferUsageFlags usage)
+{
+	result.size = size;
+	VkBufferCreateInfo createInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+	createInfo.size = size;
+	createInfo.usage = usage;
+	VK_CHECK(vkCreateBuffer(device, &createInfo, 0, &result.buffer));
+
+	VkMemoryRequirements memReqs;
+	vkGetBufferMemoryRequirements(device, result.buffer, &memReqs);
+
+	uint32_t memoryType = selectMemoryType(memoryProperties, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	assert(memoryType != ~0u);
+
+	VkMemoryAllocateInfo allocInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+	allocInfo.allocationSize = memReqs.size;
+	allocInfo.memoryTypeIndex = memoryType;
+
+	result.memory = 0;
+	VK_CHECK(vkAllocateMemory(device, &allocInfo, 0, &result.memory));
+
+	VK_CHECK(vkBindBufferMemory(device, result.buffer, result.memory, 0));
+
+	VK_CHECK(vkMapMemory(device, result.memory, 0, size, 0, &result.data));
+}
+
+void destoryBuffer(Buffer& result, VkDevice device)
+{
+	vkFreeMemory(device, result.memory, 0);
+	vkDestroyBuffer(device, result.buffer, 0);
+}
+
+int main(int argc, const char** argv)
+{
+	if (argc < 2) {
+		printf("Usage: %s [mesh]\n", argv[0]);
+		return 1;
+	}
+
 	int rc = glfwInit();
 	assert(rc);
 
@@ -635,6 +808,23 @@ int main()
 	VkCommandBuffer commandBuffer = 0;
 	VK_CHECK(vkAllocateCommandBuffers(device, &allocateInfo, &commandBuffer));
 
+	VkPhysicalDeviceMemoryProperties memoryProperties;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
+
+	Mesh mesh;
+	bool rcm = loadMesh(mesh, argv[1]);
+
+	Buffer vb = {};
+	createBuffer(vb, device, memoryProperties, mesh.vertices.size() * sizeof(Vertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+	Buffer ib = {};
+	createBuffer(ib, device, memoryProperties, mesh.indices.size() * sizeof(unsigned int), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+
+	assert(vb.size >= mesh.vertices.size() * sizeof(Vertex));
+	memcpy(vb.data, mesh.vertices.data(), mesh.vertices.size() * sizeof(Vertex));
+	
+	assert(ib.size >= mesh.indices.size() * sizeof(uint32_t));
+	memcpy(ib.data, mesh.indices.data(), mesh.indices.size() * sizeof(uint32_t));
+
 	while (!glfwWindowShouldClose(window))
 	{
 		glfwPollEvents();
@@ -674,7 +864,24 @@ int main()
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline);
-		vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+		VkDescriptorBufferInfo bufferInfo = {};
+		bufferInfo.buffer = vb.buffer;
+		bufferInfo.offset = 0;
+		bufferInfo.range = vb.size;
+
+		VkWriteDescriptorSet descriptors[1] = {};
+		descriptors[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptors[0].dstBinding = 0;
+		descriptors[0].descriptorCount = 1;
+		descriptors[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		descriptors[0].pBufferInfo = &bufferInfo;
+
+		vkCmdPushDescriptorSetKHR(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, triangleLayout, 0, ARRAYSIZE(descriptors), descriptors);
+
+		vkCmdBindIndexBuffer(commandBuffer, ib.buffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(commandBuffer, uint32_t(mesh.indices.size()), 1, 0, 0, 0);
+		//vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
 		vkCmdEndRenderPass(commandBuffer);
 
@@ -712,6 +919,9 @@ int main()
 	}
 
 	VK_CHECK(vkDeviceWaitIdle(device));
+
+	destoryBuffer(vb, device);
+	destoryBuffer(ib, device);
 
 	vkDestroyCommandPool(device, commandPool, 0);
 
