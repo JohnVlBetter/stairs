@@ -3,21 +3,25 @@
 struct Shader {
 	VkShaderModule module;
 	VkShaderStageFlagBits stage;
+	uint32_t storageBufferMask;
 };
 
 bool loadShader(Shader& shader, VkDevice device, const char* path);
 void destroyShader(Shader& shader, VkDevice device);
-VkDescriptorSetLayout createSetLayout(VkDevice device, bool rtxEnabled);
+VkDescriptorSetLayout createSetLayout(VkDevice device, const Shader& vs, const Shader& fs);
 VkPipelineLayout createPipelineLayout(VkDevice device, VkDescriptorSetLayout setLayout);
-VkDescriptorUpdateTemplate createUpdateTemplate(VkDevice device, VkPipelineBindPoint bindPoint, VkDescriptorSetLayout setLayout, VkPipelineLayout layout, bool rtxEnabled);
-VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache, VkRenderPass renderPass, const Shader& vs, const Shader& fs, 
-	VkPipelineLayout layout, bool rtxEnabled);
+VkDescriptorUpdateTemplate createUpdateTemplate(VkDevice device, VkPipelineBindPoint bindPoint, VkPipelineLayout layout, const Shader& vs, const Shader& fs);
+VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache, VkRenderPass renderPass, const Shader& vs, const Shader& fs, VkPipelineLayout layout);
 
 struct DescriptorInfo {
 	union {
 		VkDescriptorImageInfo image;
 		VkDescriptorBufferInfo buffer;
 	};
+
+	DescriptorInfo() {
+		
+	}
 
 	DescriptorInfo(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
 		this->image.sampler = sampler;

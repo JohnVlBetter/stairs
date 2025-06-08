@@ -839,30 +839,30 @@ int main(int argc, const char** argv)
 	// TODO: this is critical for performance!
 	VkPipelineCache pipelineCache = 0;
 
-	VkDescriptorSetLayout setLayout = createSetLayout(device, false);
+	VkDescriptorSetLayout setLayout = createSetLayout(device, meshVS, meshFS);
 	VkPipelineLayout meshLayout = createPipelineLayout(device, setLayout);
 	assert(meshLayout);
 
-	VkDescriptorUpdateTemplate updateTemplate = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, setLayout, meshLayout, false);
+	VkDescriptorUpdateTemplate updateTemplate = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayout, meshVS, meshFS);
 	assert(updateTemplate);
 
-	VkDescriptorSetLayout setLayoutRTX = createSetLayout(device, true);
+	VkDescriptorSetLayout setLayoutRTX = createSetLayout(device, meshMS, meshFS);
 	VkPipelineLayout meshLayoutRTX = 0;
 	VkDescriptorUpdateTemplate updateTemplateRTX = 0;
 	if (rtxSupported) {
 		meshLayoutRTX = createPipelineLayout(device, setLayoutRTX);
 		assert(meshLayoutRTX);
 
-		updateTemplateRTX  = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, setLayoutRTX, meshLayoutRTX, true);
+		updateTemplateRTX  = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayoutRTX, meshMS, meshFS);
 		assert(updateTemplateRTX);
 	}
 
-	VkPipeline meshPipeline = createGraphicsPipeline(device, pipelineCache, renderPass, meshVS, meshFS, meshLayout, /*rtxEnabled*/false);
+	VkPipeline meshPipeline = createGraphicsPipeline(device, pipelineCache, renderPass, meshVS, meshFS, meshLayout);
 	assert(meshPipeline);
 
 	VkPipeline meshPipelineRTX = 0;
 	if (rtxSupported) {
-		meshPipelineRTX = createGraphicsPipeline(device, pipelineCache, renderPass, meshMS, meshFS, meshLayoutRTX, /*rtxEnabled*/true);
+		meshPipelineRTX = createGraphicsPipeline(device, pipelineCache, renderPass, meshMS, meshFS, meshLayoutRTX);
 		assert(meshPipelineRTX);
 	}
 
