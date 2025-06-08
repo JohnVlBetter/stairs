@@ -215,6 +215,7 @@
     <ClCompile Include="..\extern\meshoptimizer\src\vertexfilter.cpp" />
     <ClCompile Include="..\extern\meshoptimizer\src\vfetchoptimizer.cpp" />
     <ClCompile Include="..\extern\volk\volk.c" />
+    <ClCompile Include="shaders.cpp" />
     <ClCompile Include="stairs.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -229,14 +230,12 @@
     <ClInclude Include="..\extern\meshoptimizer\src\meshoptimizer.h" />
     <ClInclude Include="..\extern\volk\volk.h" />
     <ClInclude Include="..\meshoptimizer\extern\fast_obj.h" />
+    <ClInclude Include="common.h" />
+    <ClInclude Include="shaders.h" />
+    <ClInclude Include="shaders\mesh.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shaders\meshlet.mesh.glsl">
-      <FileType>Document</FileType>
-    </CustomBuild>
-  </ItemGroup>
-  <ItemGroup>
-    <CustomBuild Include="shaders\meshfvf.vert.glsl">
       <FileType>Document</FileType>
     </CustomBuild>
   </ItemGroup>

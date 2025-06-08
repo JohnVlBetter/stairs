@@ -140,6 +140,9 @@
     <ClCompile Include="..\extern\meshoptimizer\src\vfetchoptimizer.cpp">
       <Filter>meshoptimizer</Filter>
     </ClCompile>
+    <ClCompile Include="shaders.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\extern\glfw\src\win32_joystick.h">
@@ -175,12 +178,18 @@
     <ClInclude Include="..\meshoptimizer\extern\fast_obj.h">
       <Filter>meshoptimizer</Filter>
     </ClInclude>
+    <ClInclude Include="shaders\mesh.h">
+      <Filter>shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="shaders.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="shaders\meshlet.mesh.glsl">
-      <Filter>shaders</Filter>
-    </CustomBuild>
-    <CustomBuild Include="shaders\meshfvf.vert.glsl">
       <Filter>shaders</Filter>
     </CustomBuild>
     <CustomBuild Include="shaders\mesh.frag.glsl">
