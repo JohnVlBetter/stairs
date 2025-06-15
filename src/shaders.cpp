@@ -140,10 +140,13 @@ void destroyShader(Shader& shader, VkDevice device) {
 	vkDestroyShaderModule(device, shader.module, 0);
 }
 
-VkDescriptorSetLayout createSetLayout(VkDevice device, const Shader& vs, const Shader& fs) {
+VkDescriptorSetLayout createSetLayout(VkDevice device, Shaders shaders) {
 	std::vector<VkDescriptorSetLayoutBinding> setBinding = {};
 
-	uint32_t storageBufferMask = vs.storageBufferMask | fs.storageBufferMask;
+	uint32_t storageBufferMask = 0;
+	for (const Shader* shader : shaders) {
+		storageBufferMask |= shader->storageBufferMask;
+	}
 
 	for (uint32_t i = 0; i < 32; ++i) {
 		if (storageBufferMask & (1 << i)) {
@@ -153,11 +156,10 @@ VkDescriptorSetLayout createSetLayout(VkDevice device, const Shader& vs, const S
 			binding.descriptorCount = 1;
 
 			binding.stageFlags = 0;
-			if (vs.storageBufferMask & (1 << i)) {
-				binding.stageFlags |= vs.stage;
-			}
-			if (fs.storageBufferMask & (1 << i)) {
-				binding.stageFlags |= fs.stage;
+			for (const Shader* shader : shaders) {
+				if (shader->storageBufferMask & (1 << i)) {
+					binding.stageFlags |= shader->stage;
+				}
 			}
 
 			setBinding.push_back(binding);
@@ -187,10 +189,13 @@ VkPipelineLayout createPipelineLayout(VkDevice device, VkDescriptorSetLayout set
 	return layout;
 }
 
-VkDescriptorUpdateTemplate createUpdateTemplate(VkDevice device, VkPipelineBindPoint bindPoint, VkPipelineLayout layout, const Shader& vs, const Shader& fs) {
+VkDescriptorUpdateTemplate createUpdateTemplate(VkDevice device, VkPipelineBindPoint bindPoint, VkPipelineLayout layout, Shaders shaders) {
 	std::vector<VkDescriptorUpdateTemplateEntry> entries;
 
-	uint32_t storageBufferMask = vs.storageBufferMask | fs.storageBufferMask;
+	uint32_t storageBufferMask = 0;
+	for (const Shader* shader : shaders) {
+		storageBufferMask |= shader->storageBufferMask;
+	}
 
 	for (uint32_t i = 0; i < 32; ++i) {
 		if (storageBufferMask & (1 << i)) {
@@ -221,25 +226,23 @@ VkDescriptorUpdateTemplate createUpdateTemplate(VkDevice device, VkPipelineBindP
 	return updateTemplate;
 }
 
-VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache, VkRenderPass renderPass, const Shader& vs, const Shader& fs, VkPipelineLayout layout)
+VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache, VkRenderPass renderPass, Shaders shaders, VkPipelineLayout layout)
 {
-	assert(VK_SHADER_STAGE_VERTEX_BIT || VK_SHADER_STAGE_FRAGMENT_BIT);
-	assert(VK_SHADER_STAGE_TASK_BIT_NV || VK_SHADER_STAGE_MESH_BIT_NV);
-
 	VkGraphicsPipelineCreateInfo createInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
 
-	VkPipelineShaderStageCreateInfo stages[2] = {};
-	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	stages[0].stage = vs.stage;
-	stages[0].module = vs.module;
-	stages[0].pName = "main";
-	stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	stages[1].stage = fs.stage;
-	stages[1].module = fs.module;
-	stages[1].pName = "main";
+	std::vector<VkPipelineShaderStageCreateInfo> stages;
+	for (const Shader* shader : shaders) {
+		VkPipelineShaderStageCreateInfo stage = {};
+		stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		stage.stage = shader->stage;
+		stage.module = shader->module;
+		stage.pName = "main";
 
-	createInfo.stageCount = sizeof(stages) / sizeof(stages[0]);
-	createInfo.pStages = stages;
+		stages.push_back(stage);
+	}
+
+	createInfo.stageCount = uint32_t(stages.size());
+	createInfo.pStages = stages.data();
 
 	VkPipelineVertexInputStateCreateInfo vertexInput = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 	createInfo.pVertexInputState = &vertexInput;
@@ -257,6 +260,7 @@ VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache
 	rasterizationState.lineWidth = 1.f;
 	rasterizationState.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
+	//rasterizationState.cullMode = VK_CULL_MODE_FRONT_BIT;
 	createInfo.pRasterizationState = &rasterizationState;
 
 	VkPipelineMultisampleStateCreateInfo multisampleState = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };

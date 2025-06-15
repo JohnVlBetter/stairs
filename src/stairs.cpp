@@ -505,7 +505,8 @@ struct Vertex {
 	uint16_t tu, tv;
 };
 
-struct Meshlet {
+struct alignas(16) Meshlet {
+	float cone[4];
 	uint32_t vertices[64];
 	uint8_t indices[126 * 3];
 	uint8_t triangleCount;
@@ -648,6 +649,92 @@ void buildMeshlets(Mesh& mesh)
 		mesh.meshlets.push_back(meshlet);
 }
 
+float halfToFloat(uint16_t v) {
+	uint16_t sign = v >> 15;
+	uint16_t exp = (v >> 10) & 31;
+	uint16_t mant = v & 1023;
+
+	assert(exp != 31);
+
+	if (exp == 0) {
+		assert(mant == 0);
+		return 0.f;
+	}
+	else {
+		return (sign ? -1.f : 1.f) * ldexpf(float(mant + 1024) / 1024.f, exp - 15);
+	}
+}
+
+void buildMeshletCones(Mesh& mesh) {
+	for (Meshlet& meshlet : mesh.meshlets) {
+		float normals[126][3];
+
+		for (unsigned int i = 0; i < meshlet.triangleCount; ++i) {
+			unsigned int a = meshlet.indices[i * 3 + 0];
+			unsigned int b = meshlet.indices[i * 3 + 1];
+			unsigned int c = meshlet.indices[i * 3 + 2];
+
+			const Vertex& va = mesh.vertices[meshlet.vertices[a]];
+			const Vertex& vb = mesh.vertices[meshlet.vertices[b]];
+			const Vertex& vc = mesh.vertices[meshlet.vertices[c]];
+
+			float p0[3] = { halfToFloat(va.vx), halfToFloat(va.vy) , halfToFloat(va.vz) };
+			float p1[3] = { halfToFloat(vb.vx), halfToFloat(vb.vy) , halfToFloat(vb.vz) };
+			float p2[3] = { halfToFloat(vc.vx), halfToFloat(vc.vy) , halfToFloat(vc.vz) };
+
+			float p10[3] = { p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2] };
+			float p20[3] = { p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2] };
+
+			float normalx = p10[1] * p20[2] - p10[2] * p20[1];
+			float normaly = p10[2] * p20[0] - p10[0] * p20[2];
+			float normalz = p10[0] * p20[1] - p10[1] * p20[0];
+
+			float area = sqrtf(normalx * normalx + normaly * normaly + normalz * normalz);
+			float invarea = area == 0.f ? 0.f : 1 / area;
+
+			normals[i][0] = normalx * invarea;
+			normals[i][1] = normaly * invarea;
+			normals[i][2] = normalz * invarea;
+		}
+
+		float avgnormals[3] = {};
+
+		for (unsigned int i = 0; i < meshlet.triangleCount; ++i) {
+			avgnormals[0] += normals[i][0];
+			avgnormals[1] += normals[i][1];
+			avgnormals[2] += normals[i][2];
+		}
+
+		float avglength = sqrtf(avgnormals[0] * avgnormals[0] + avgnormals[1] * avgnormals[1] + avgnormals[2] * avgnormals[2]);
+
+		if (avglength == 0.f) {
+			avgnormals[0] = 1.f;
+			avgnormals[1] = 1.f;
+			avgnormals[2] = 1.f;
+		}
+		else {
+			avgnormals[0] /= avglength;
+			avgnormals[1] /= avglength;
+			avgnormals[2] /= avglength;
+		}
+
+		float mindp = 1.f;
+
+		for (unsigned int i = 0; i < meshlet.triangleCount; ++i) {
+			float dp = normals[i][0] * avgnormals[0] + normals[i][1] * avgnormals[1] + normals[i][2] * avgnormals[2];
+
+			mindp = std::min(mindp, dp);
+		}
+
+		float conew = mindp <= 0.f ? 1 : sqrtf(1 - mindp * mindp);
+
+		meshlet.cone[0] = avgnormals[0];
+		meshlet.cone[1] = avgnormals[1];
+		meshlet.cone[2] = avgnormals[2];
+		meshlet.cone[3] = conew;
+	}
+}
+	
 struct Buffer {
 	VkBuffer buffer;
 	VkDeviceMemory memory;
@@ -839,30 +926,30 @@ int main(int argc, const char** argv)
 	// TODO: this is critical for performance!
 	VkPipelineCache pipelineCache = 0;
 
-	VkDescriptorSetLayout setLayout = createSetLayout(device, meshVS, meshFS);
+	VkDescriptorSetLayout setLayout = createSetLayout(device, { &meshVS, &meshFS });
 	VkPipelineLayout meshLayout = createPipelineLayout(device, setLayout);
 	assert(meshLayout);
 
-	VkDescriptorUpdateTemplate updateTemplate = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayout, meshVS, meshFS);
+	VkDescriptorUpdateTemplate updateTemplate = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayout, { &meshVS, &meshFS });
 	assert(updateTemplate);
 
-	VkDescriptorSetLayout setLayoutRTX = createSetLayout(device, meshMS, meshFS);
+	VkDescriptorSetLayout setLayoutRTX = createSetLayout(device, { &meshMS, &meshFS });
 	VkPipelineLayout meshLayoutRTX = 0;
 	VkDescriptorUpdateTemplate updateTemplateRTX = 0;
 	if (rtxSupported) {
 		meshLayoutRTX = createPipelineLayout(device, setLayoutRTX);
 		assert(meshLayoutRTX);
 
-		updateTemplateRTX  = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayoutRTX, meshMS, meshFS);
+		updateTemplateRTX  = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayoutRTX, { &meshMS, &meshFS });
 		assert(updateTemplateRTX);
 	}
 
-	VkPipeline meshPipeline = createGraphicsPipeline(device, pipelineCache, renderPass, meshVS, meshFS, meshLayout);
+	VkPipeline meshPipeline = createGraphicsPipeline(device, pipelineCache, renderPass, { &meshVS, &meshFS }, meshLayout);
 	assert(meshPipeline);
 
 	VkPipeline meshPipelineRTX = 0;
 	if (rtxSupported) {
-		meshPipelineRTX = createGraphicsPipeline(device, pipelineCache, renderPass, meshMS, meshFS, meshLayoutRTX);
+		meshPipelineRTX = createGraphicsPipeline(device, pipelineCache, renderPass, { &meshMS, &meshFS }, meshLayoutRTX);
 		assert(meshPipelineRTX);
 	}
 
@@ -892,6 +979,7 @@ int main(int argc, const char** argv)
 
 	if (rtxSupported) {
 		buildMeshlets(mesh);
+		buildMeshletCones(mesh);
 	}
 
 	Buffer vb = {};
