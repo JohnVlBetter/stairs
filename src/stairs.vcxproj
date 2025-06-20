@@ -242,8 +242,17 @@
   <ItemGroup>
     <CustomBuild Include="shaders\mesh.frag.glsl">
       <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(VULKAN_SDK)\Bin\glslangValidator %(FullPath) -V -o shaders/%(Filename).spv</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(VULKAN_SDK)\Bin\glslangValidator %(FullPath) -V -o shaders/%(Filename).spv</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(VULKAN_SDK)\Bin\glslangValidator %(FullPath) -V -o shaders/%(Filename).spv</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(VULKAN_SDK)\Bin\glslangValidator %(FullPath) -V -o shaders/%(Filename).spv</Command>
     </CustomBuild>
     <CustomBuild Include="shaders\mesh.vert.glsl">
+      <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="shaders\meshlet.task.glsl">
       <FileType>Document</FileType>
     </CustomBuild>
   </ItemGroup>

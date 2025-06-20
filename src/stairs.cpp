@@ -207,7 +207,7 @@ VkDevice createDevice(VkInstance instance, VkPhysicalDevice physicalDevice, uint
 	if (rtxSupported) {
 		VkPhysicalDeviceMeshShaderFeaturesNV meshShaderFeatures = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV };
 		meshShaderFeatures.meshShader = true;
-		//meshShaderFeatures.taskShader = true;
+		meshShaderFeatures.taskShader = true;
 		features12.pNext = &meshShaderFeatures;
 	}
 
@@ -647,6 +647,10 @@ void buildMeshlets(Mesh& mesh)
 
 	if (meshlet.triangleCount)
 		mesh.meshlets.push_back(meshlet);
+
+	while(mesh.meshlets.size() % 32){
+		mesh.meshlets.push_back(Meshlet());
+	}
 }
 
 float halfToFloat(uint16_t v) {
@@ -873,6 +877,15 @@ int main(int argc, const char** argv)
 	VkPhysicalDeviceProperties props;
 	vkGetPhysicalDeviceProperties(physicalDevice, &props);
 	assert(props.limits.timestampComputeAndGraphics);
+	
+	//VkPhysicalDeviceMeshShaderPropertiesEXT meshShaderProps;
+	//if (rtxSupported) {
+	//	meshShaderProps = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT };
+	//	VkPhysicalDeviceProperties2 props2 = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+	//	props2.pNext = &meshShaderProps;
+	//	vkGetPhysicalDeviceProperties2(physicalDevice, &props2);
+	//	assert(meshShaderProps.maxTaskSharedMemorySize > 16);
+	//}
 
 	uint32_t familyIndex = getGraphicsFamilyIndex(physicalDevice);
 	assert(familyIndex != VK_QUEUE_FAMILY_IGNORED);
@@ -910,8 +923,12 @@ int main(int argc, const char** argv)
 
 	rc = false;
 	Shader meshMS = {};
+	Shader meshTS = {};
 	if (rtxSupported) {
 		rc = loadShader(meshMS, device,"shaders/meshlet.mesh.spv");
+		assert(rc);
+
+		rc = loadShader(meshTS, device, "shaders/meshlet.task.spv");
 		assert(rc);
 	}
 
@@ -933,14 +950,14 @@ int main(int argc, const char** argv)
 	VkDescriptorUpdateTemplate updateTemplate = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayout, { &meshVS, &meshFS });
 	assert(updateTemplate);
 
-	VkDescriptorSetLayout setLayoutRTX = createSetLayout(device, { &meshMS, &meshFS });
+	VkDescriptorSetLayout setLayoutRTX = createSetLayout(device, { &meshTS, &meshMS, &meshFS });
 	VkPipelineLayout meshLayoutRTX = 0;
 	VkDescriptorUpdateTemplate updateTemplateRTX = 0;
 	if (rtxSupported) {
 		meshLayoutRTX = createPipelineLayout(device, setLayoutRTX);
 		assert(meshLayoutRTX);
 
-		updateTemplateRTX  = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayoutRTX, { &meshMS, &meshFS });
+		updateTemplateRTX  = createUpdateTemplate(device, VK_PIPELINE_BIND_POINT_GRAPHICS, meshLayoutRTX, { &meshTS, &meshMS, &meshFS });
 		assert(updateTemplateRTX);
 	}
 
@@ -949,7 +966,7 @@ int main(int argc, const char** argv)
 
 	VkPipeline meshPipelineRTX = 0;
 	if (rtxSupported) {
-		meshPipelineRTX = createGraphicsPipeline(device, pipelineCache, renderPass, { &meshMS, &meshFS }, meshLayoutRTX);
+		meshPipelineRTX = createGraphicsPipeline(device, pipelineCache, renderPass, { &meshTS, &meshMS, &meshFS }, meshLayoutRTX);
 		assert(meshPipelineRTX);
 	}
 
@@ -1050,7 +1067,7 @@ int main(int argc, const char** argv)
 			DescriptorInfo descriptors[] = {vb.buffer, mb.buffer};
 			vkCmdPushDescriptorSetWithTemplateKHR(commandBuffer, updateTemplateRTX, meshLayoutRTX, 0, descriptors);
 
-			vkCmdDrawMeshTasksNV(commandBuffer, uint32_t(mesh.meshlets.size()), 0);
+			vkCmdDrawMeshTasksNV(commandBuffer, uint32_t(mesh.meshlets.size()) / 32, 0);
 		}
 		else {
 			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, meshPipeline);
@@ -1145,6 +1162,7 @@ int main(int argc, const char** argv)
 	destroyShader(meshVS, device);
 	if (rtxSupported) {
 		destroyShader(meshMS, device);
+		destroyShader(meshTS, device);
 	}
 
 	vkDestroyRenderPass(device, renderPass, 0);
